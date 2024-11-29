@@ -507,3 +507,49 @@ __handle_receive_reset(struct trace_event_raw_tcp_receive_reset *ctx)
     //  ctx->dport);
     return ret((void *)ctx->skaddr, 1, ctx->sport, ctx->dport);
 }
+
+static __always_inline int
+__handle_tcp_rcv_space_adjust(struct bpf_raw_tracepoint_args *ctx)
+{
+    struct sock *sk = (struct sock*)ctx->args[0];
+    if (!sk)
+        return 0;
+
+    u64 current_time = bpf_ktime_get_ns() / 1000;
+    u64 *last_time = bpf_map_lookup_elem(&tcp_rate_map, &sk);
+
+    if (last_time)
+    {
+        if ((current_time - *last_time) < TIME_THRESHOLD_NS)
+        {
+            return 0;
+        }
+    }
+
+    bpf_map_update_elem(&tcp_rate_map, &sk, &current_time, BPF_ANY);
+    struct inet_connection_sock *icsk = (struct inet_connection_sock *)sk;
+    if (!icsk)
+        return 0;
+
+    struct tcp_rate *message =
+        bpf_ringbuf_reserve(&rate_rb, sizeof(*message), 0);
+
+    if (!message)
+    {
+        return 0;
+    }
+
+    message->skbap.saddr = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
+    message->skbap.daddr = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+    message->skbap.sport = __bpf_ntohs(BPF_CORE_READ(sk, __sk_common.skc_num));
+    message->skbap.dport =
+        __bpf_ntohs(BPF_CORE_READ(sk, __sk_common.skc_dport));
+    message->tcp_rto = BPF_CORE_READ(icsk, icsk_rto);
+    message->tcp_delack_max = BPF_CORE_READ(icsk, icsk_delack_max);
+    message->pid = get_current_tgid();
+
+    // bpf_printk("rto:%u ato:%u", message->tcp_rto, message->tcp_ato);
+
+    bpf_ringbuf_submit(message, 0);
+    return 0;
+}
