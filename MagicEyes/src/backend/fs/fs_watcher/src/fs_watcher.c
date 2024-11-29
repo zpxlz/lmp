@@ -105,6 +105,7 @@ static struct env{
     bool disk_io_visit;
     bool block_rq_issue;
     bool CacheTrack;
+    pid_t pid;
 }env = {
     .open = false,
     .read = false,
@@ -112,6 +113,7 @@ static struct env{
     .disk_io_visit = false,
     .block_rq_issue = false,
     .CacheTrack = false,
+    .pid = -1,
 };
 
 static const struct argp_option opts[] = {
@@ -121,6 +123,7 @@ static const struct argp_option opts[] = {
     {"disk_io_visit", 'd', 0, 0, "Print disk I/O visit report"},
     {"block_rq_issue", 'b', 0, 0, "Print block I/O request submission events. Reports when block I/O requests are submitted to device drivers."},
     {"CacheTrack", 't' , 0 ,0 , "WriteBack dirty lagency and other information"},
+    {"pid", 'p', "PID", 0, "Specify pid number when report weite. Only support for write report now"},
     {0} // 结束标记，用于指示选项列表的结束
 };
 
@@ -139,7 +142,19 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state) {
         env.block_rq_issue = true;break;
         case 't':
         env.CacheTrack = true;break;
-        default: 
+        case 'p':
+        if (arg) {
+            env.pid = atoi(arg);
+            if (env.pid <= 0) {
+                fprintf(stderr, "Invalid PID value: %s\n", arg);
+                argp_usage(state);
+            }
+        } else {
+            fprintf(stderr, "-p option requires an argument\n");
+            argp_usage(state);
+        }
+        break;
+        default:
             return ARGP_ERR_UNKNOWN;
     }
     return 0;
@@ -351,8 +366,20 @@ read_cleanup:
 static int process_write(struct write_bpf *skel_write){
     int err;
     struct ring_buffer *rb;
-    
+    int arg_index = 0;
+
+    struct dist_args d_args = {-1};
+
     LOAD_AND_ATTACH_SKELETON(skel_write,write);
+
+    d_args.pid = env.pid;
+    struct bpf_map *arg_map = bpf_object__find_map_by_name((const struct bpf_object *)*(skel_write->skeleton->obj), "args_map");
+    err = bpf_map__update_elem(arg_map, &arg_index, sizeof(arg_index), &d_args, sizeof(d_args), BPF_ANY);
+
+    if (err < 0) {
+        fprintf(stderr, "ERROR: failed to update args map\n");
+        goto write_cleanup;
+    }
 
     printf("%-8s    %-8s    %-8s    %-8s    %-8s\n","ds","inode_number","pid","real_count","count");
     POLL_RING_BUFFER(rb, 1000, err);
