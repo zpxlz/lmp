@@ -563,10 +563,15 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
             break;
         }
         case CONTAINER_SYSCALL: {
-            printf("%-8u %-22s %-10lld %-10lld %-16s\n", e->syscall_data.pid,
+            if(env.show){
+                printf("%-10lld %-10lld\n",e->syscall_data.delay,e->syscall_data.syscall_id);
+                break;
+            }else{
+                printf("%-8u %-22s %-10lld %-10lld %-16s\n", e->syscall_data.pid,
                    e->syscall_data.container_id, e->syscall_data.delay,
                    e->syscall_data.syscall_id, e->syscall_data.comm);
-            break;
+                break;
+            }
         }
         case HALT_POLL: {
             // 使用 e->halt_poll_data 访问 HALT_POLL 特有成员
@@ -779,8 +784,12 @@ static int print_event_head(struct env *env) {
                    "VAILD?");
             break;
         case CONTAINER_SYSCALL:
-            printf("%-8s %-22s %-9s %10s %-16s\n", "PID", "CONTAINER_ID",
-                   "DELAY(us)", "SYSCALLID", "COMM");
+            if(env->show){
+                printf("%-9s %10s\n", "DELAY(us)","SYSCALLID");
+            }else{
+                printf("%-8s %-22s %-9s %10s %-16s\n", "PID", "CONTAINER_ID",
+                "DELAY(us)", "SYSCALLID", "COMM");
+            }
             break;
         case EXIT:
             //可视化调整输出格式
@@ -1242,7 +1251,7 @@ void print_map_and_check_error(int (*print_func)(struct kvm_watcher_bpf *),
 void print_logo() {
     char *logo = LOGO_STRING;
     char command[512];
-    sprintf(command, "echo \"%s\" | /usr/games/lolcat", logo);
+    sprintf(command, "bash -c 'echo \"%s\" | /usr/games/lolcat'", logo); 
     system(command);
 }
 

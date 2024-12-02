@@ -78,9 +78,93 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 10,
+        "w": 12,
         "x": 0,
         "y": 0
+      },
+      "id": 24,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "CzHV6L_Ik"
+          },
+          "exemplar": true,
+          "expr": "bpf_metrics{bpf_out_data=\"DELAY(us)\"}",
+          "interval": "",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "container_syscall_delay",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 0,
+        "y": 8
       },
       "id": 10,
       "options": {
@@ -164,7 +248,7 @@
         "h": 8,
         "w": 11,
         "x": 10,
-        "y": 0
+        "y": 8
       },
       "id": 8,
       "options": {
@@ -233,7 +317,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -248,7 +333,7 @@
         "h": 7,
         "w": 10,
         "x": 0,
-        "y": 8
+        "y": 16
       },
       "id": 6,
       "libraryPanel": {
@@ -354,7 +439,7 @@
         "h": 7,
         "w": 11,
         "x": 10,
-        "y": 8
+        "y": 16
       },
       "id": 4,
       "options": {
@@ -446,7 +531,7 @@
         "h": 7,
         "w": 10,
         "x": 0,
-        "y": 15
+        "y": 23
       },
       "id": 12,
       "options": {
@@ -530,7 +615,7 @@
         "h": 7,
         "w": 11,
         "x": 10,
-        "y": 15
+        "y": 23
       },
       "id": 14,
       "options": {
@@ -614,7 +699,7 @@
         "h": 7,
         "w": 10,
         "x": 0,
-        "y": 22
+        "y": 30
       },
       "id": 16,
       "options": {
@@ -698,7 +783,7 @@
         "h": 7,
         "w": 11,
         "x": 10,
-        "y": 22
+        "y": 30
       },
       "id": 18,
       "options": {
@@ -782,7 +867,7 @@
         "h": 7,
         "w": 10,
         "x": 0,
-        "y": 29
+        "y": 37
       },
       "id": 20,
       "options": {
@@ -867,7 +952,7 @@
         "h": 7,
         "w": 11,
         "x": 10,
-        "y": 29
+        "y": 37
       },
       "id": 22,
       "options": {
