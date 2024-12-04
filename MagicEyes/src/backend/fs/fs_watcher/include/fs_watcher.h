@@ -58,4 +58,8 @@ struct event_CacheTrack{
     unsigned long flags;    // inode 标志
 };
 
+/*send pid to ebpf*/
+struct dist_args {
+    pid_t pid;
+};
 #endif /* __MEM_WATCHER_H */
