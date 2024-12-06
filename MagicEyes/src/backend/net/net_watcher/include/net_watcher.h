@@ -56,7 +56,9 @@ typedef unsigned long long u64;
 #define MAX_EVENTS 1024
 #define CACHEMAXSIZE 5
 #define PID 32
-#define TIME_THRESHOLD_NS (200000000 / 1000) // 200 毫秒转换为微秒
+#define NS(x) ((x) * 1000000000) // 1 秒等于 10^9 纳秒
+#define TIME_THRESHOLD_NS NS(10) 
+
 typedef u64 stack_trace_t[MAX_STACK_DEPTH];
 
 struct conn_t
@@ -310,5 +312,10 @@ struct tcp_rate
     u64 tcp_delack_max;
     u32 pid;
 };
+
+struct tcp_args_s {
+    u64 sample_period; 
+};
+
 
 #endif /* __NET_WATCHER_H */

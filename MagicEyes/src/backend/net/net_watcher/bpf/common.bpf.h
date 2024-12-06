@@ -440,10 +440,17 @@ struct
 struct
 {
     __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, 65536);
+    __uint(max_entries, MAX_COMM *MAX_PACKET);
     __type(key, struct sock *);
     __type(value, u64);
 } tcp_rate_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);     
+    __type(key, u32);                    
+    __type(value, struct tcp_args_s); 
+    __uint(max_entries, 1);           
+} args_map SEC(".maps");
 
 
 const volatile int filter_dport = 0;

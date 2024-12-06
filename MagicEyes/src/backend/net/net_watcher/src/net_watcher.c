@@ -88,9 +88,10 @@ static const struct argp_option opts[] = {
     {"rtt", 'T', 0, 0, "set to trace rtt"},
     {"rst_counters", 'U', 0, 0, "set to trace rst"},
     {"protocol_count", 'p', 0, 0, "set to trace protocol count"},
-    {"overrun", 'o', 0, 0, "set to trace rto overrun"},
+    {"overrun_time", 'o', "PERIOD", 0, "set to trace rto overrun"},
+      // {"overrun", 'o', 0, 0, "set to trace rto overrun"},
     {}};
-
+static u64 sample_period = TIME_THRESHOLD_NS;
 static error_t parse_arg(int key, char *arg, struct argp_state *state)
 {
     char *end;
@@ -169,7 +170,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
         count_info = strtoul(arg, &end, 10);
         break;
     case 'o':
-        overrun_time = 1;
+        overrun_time = strtoul(arg, &end, 10);
         break;
     default:
         return ARGP_ERR_UNKNOWN;
@@ -1548,24 +1549,27 @@ static int print_trace(void *_ctx, void *data, size_t size)
     return 0;
 }
 
-static int print_rate(void *ctx, void *data, size_t size)
-{
-    if (!overrun_time)
-    {
+static int print_rate(void *ctx, void *data, size_t size) {
+    if (!overrun_time) {
         return 0;
     }
     char d_str[INET_ADDRSTRLEN];
     char s_str[INET_ADDRSTRLEN];
-    const struct tcp_rate *pack_info =
-        (const struct tcp_rate *)data; 
+    const struct tcp_rate *pack_info = (const struct tcp_rate *)data;
     unsigned int saddr = pack_info->skbap.saddr;
     unsigned int daddr = pack_info->skbap.daddr;
-
+    if ((saddr & 0x0000FFFF) == 0x0000007F ||
+        (daddr & 0x0000FFFF) == 0x0000007F)
+        return 0;
+    if ((saddr & 0xFF000000) == 0x01000000 ||
+        (daddr & 0xFF000000) == 0x01000000)
+        return 0;
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
 
-    printf("%-20s %-20s %-20d %-20d %-20lld %-20lld\n",
-           s_str, d_str, pack_info->skbap.sport, pack_info->skbap.dport, pack_info->tcp_rto, pack_info->tcp_delack_max);
+    printf("%-20s %-20s %-20d %-20d %-20lld %-20lld\n", s_str, d_str,
+           pack_info->skbap.sport, pack_info->skbap.dport, pack_info->tcp_rto,
+           pack_info->tcp_delack_max);
 
     return 0;
 }
@@ -1949,8 +1953,22 @@ int main(int argc, char **argv)
             printf("Error polling perf buffer: %d\n", err);
             break;
         }
-
         gettimeofday(&end, NULL);
+        if (overrun_time)
+        {
+            u32 key = 0;
+            struct tcp_args_s new_args;
+            new_args.sample_period = overrun_time;
+
+            // 更新 args_map，传递采样周期给 BPF 程序
+            err = bpf_map_update_elem(bpf_map__fd(skel->maps.args_map), &key, &new_args, BPF_ANY);
+            if (err)
+            {
+                fprintf(stderr, "Failed to update sample period\n");
+                return 1;
+            }
+        }
+
         if ((end.tv_sec - start.tv_sec) >= 5)
         {
             if (rst_info)
