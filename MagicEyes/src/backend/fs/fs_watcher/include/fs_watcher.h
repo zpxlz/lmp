@@ -61,4 +61,9 @@ struct event_CacheTrack{
     long long time_complete;  // 写回开始时间
 };
 
-#endif /* __FS_WATCHER_H */
+/*send pid to ebpf*/
+struct dist_args {
+    pid_t pid;
+};
+#endif /* __MEM_WATCHER_H */
+
