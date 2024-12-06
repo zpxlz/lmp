@@ -911,7 +911,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Failed to attach BPF skeleton\n");
 			goto sc_delay_cleanup;
 		}
-		printf("%-8s   %-8s   %-15s %-15s\n","Time","Pid","syscall_id","delay/ms");
+		printf("%-8s   %-8s   %-15s %-15s\n","Time","Pid","syscall_id","delay/us");
 		rb = ring_buffer__new(bpf_map__fd(sc_skel->maps.rb), syscall_delay_print, NULL, NULL);	//ring_buffer__new() API，允许在不使用额外选项数据结构下指定回调
 		if (!rb) {
 			err = -1;
