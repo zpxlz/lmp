@@ -18,15 +18,33 @@ struct {
 	__uint(max_entries,256 * 1024);
 } rb SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 256 * 1024);
+	__type(key, u32);
+	__type(value, struct dist_args);
+} args_map SEC(".maps");
 
 SEC("kprobe/vfs_write")
 int kprobe_vfs_write(struct pt_regs *ctx)
 {
   pid_t pid;
+  int index = 0;
   struct fs_t *e;
   unsigned long inode_number;//定义用于存储inode号码的变量
 
-   //探测的是第一个参数，文件指针,读取inode_number
+  struct dist_args *d_args = bpf_map_lookup_elem(&args_map, &index);
+  if (d_args == NULL){
+    bpf_printk("Failed to look args\n");
+    return 0;
+  }
+
+  pid = bpf_get_current_pid_tgid() >> 32;
+  if (d_args->pid > 0 && d_args->pid != pid) {
+    return 0;
+  }
+
+  //探测的是第一个参数，文件指针,读取inode_number
   struct file *filp = (struct file *)PT_REGS_PARM1(ctx);  
   struct dentry *dentry = BPF_CORE_READ(filp,f_path.dentry);
   if(!dentry){
@@ -42,11 +60,10 @@ int kprobe_vfs_write(struct pt_regs *ctx)
 
   //探测的是第三个参数，要写入的字节数
   size_t count = (size_t)PT_REGS_PARM3(ctx);
-  
+
   //这是vfs_write的返回值，它是一个实际写入的字节数
   size_t real_count = PT_REGS_RC(ctx);
-  
-  pid = bpf_get_current_pid_tgid() >> 32;
+
   e = bpf_ringbuf_reserve(&rb,sizeof(*e),0); 
   if(!e)
     return 0;
