@@ -1252,7 +1252,7 @@ static int process_sysstat(struct sysstat_bpf *skel_sysstat)
 	}
 	else
 	{
-		printf("%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s\n", "TIME", "PID", "CPU", "MEM", "READ", "WRITE", "IOWAIT", "SWAP");
+		printf("%-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s %-8s\n", "ACTIVE", "INACTVE", "ANON_ACT", "ANON_INA", "FILE_ACT", "FILE_INA", "UNEVICT", "DIRTY", "WRITEBK", "ANONPAG", "MAP", "SHMEM");
 	}
 	POLL_RING_BUFFER(rb, 1000, err);
 
