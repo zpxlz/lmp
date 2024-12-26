@@ -89,7 +89,7 @@ static const struct argp_option opts[] = {
     {"rst_counters", 'U', 0, 0, "set to trace rst"},
     {"protocol_count", 'p', 0, 0, "set to trace protocol count"},
     {"overrun_time", 'o', "PERIOD", 0, "set to trace rto overrun"},
-      // {"overrun", 'o', 0, 0, "set to trace rto overrun"},
+    {NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help"},
     {}};
 static u64 sample_period = TIME_THRESHOLD_NS;
 static error_t parse_arg(int key, char *arg, struct argp_state *state)
@@ -171,6 +171,9 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
         break;
     case 'o':
         overrun_time = strtoul(arg, &end, 10);
+        break;
+    case 'h':
+        argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
         break;
     default:
         return ARGP_ERR_UNKNOWN;
@@ -1549,8 +1552,10 @@ static int print_trace(void *_ctx, void *data, size_t size)
     return 0;
 }
 
-static int print_rate(void *ctx, void *data, size_t size) {
-    if (!overrun_time) {
+static int print_rate(void *ctx, void *data, size_t size)
+{
+    if (!overrun_time)
+    {
         return 0;
     }
     char d_str[INET_ADDRSTRLEN];
