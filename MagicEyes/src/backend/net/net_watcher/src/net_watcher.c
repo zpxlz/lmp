@@ -519,20 +519,20 @@ int process_delay(float layer_delay, int layer_index)
     }
     return 0;
 }
-// 封装的过滤逻辑函数
+//过滤ip
 static int should_filter(const char *src, const char *dst, const char *filter_src_ip, const char *filter_dst_ip)
 {
     if (filter_src_ip && strcmp(src, filter_src_ip) == 0)
     {
-        return 1; // 过滤掉
+        return 1; 
     }
 
     if (filter_dst_ip && strcmp(dst, filter_dst_ip) == 0)
     {
-        return 1; // 过滤掉
+        return 1; 
     }
 
-    return 0; // 不过滤
+    return 0; 
 }
 
 static void set_rodata_flags(struct net_watcher_bpf *skel)
