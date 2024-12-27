@@ -55,6 +55,7 @@ static int all_conn = 0, err_packet = 0, extra_conn_info = 0, layer_time = 0,
            time_load = 0, dns_info = 0, stack_info = 0, mysql_info = 0,
            redis_info = 0, count_info = 0, rtt_info = 0, rst_info = 0,
            protocol_count = 0, redis_stat = 0, overrun_time = 0; // flag
+static char *dst_ip = NULL, *src_ip = NULL;
 
 static const char argp_program_doc[] = "Watch tcp/ip in network subsystem \n";
 static const struct argp_option opts[] = {
@@ -66,14 +67,16 @@ static const struct argp_option opts[] = {
     {"http", 'i', 0, 0, "set to trace http info"},
     {"sport", 's', "SPORT", 0, "trace this source port only"},
     {"dport", 'd', "DPORT", 0, "trace this destination port only"},
+    {"src-ip", 'S', "SRC_IP", 0, "Filter by source IP address"},
+    {"dst-ip", 'D', "DST_IP", 0, "Filter by destination IP address"},
     {"udp", 'u', 0, 0, "trace the udp message"},
     {"net_filter", 'n', 0, 0, "trace ipv4 packget filter "},
     {"drop_reason", 'k', 0, 0, "trace kfree "},
     {"addr_to_func", 'F', 0, 0, "translation addr to func and offset"},
     {"icmptime", 'I', 0, 0, "set to trace layer time of icmp"},
-    {"tcpstate", 'S', 0, 0, "set to trace tcpstate"},
+    {"tcpstate", 'P', 0, 0, "set to trace tcpstate"},
     {"timeload", 'L', 0, 0, "analysis time load"},
-    {"dns", 'D', 0, 0,
+    {"dns", 'N', 0, 0,
      "set to trace dns information info include Id 事务ID、Flags 标志字段、Qd "
      "问题部分计数、An 应答记录计数、Ns 授权记录计数、Ar 附加记录计数、Qr "
      "域名、rx 收发包 、Qc请求数、Sc响应数"},
@@ -91,6 +94,7 @@ static const struct argp_option opts[] = {
     {"overrun_time", 'o', "PERIOD", 0, "set to trace rto overrun"},
     {NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help"},
     {}};
+
 static u64 sample_period = TIME_THRESHOLD_NS;
 static error_t parse_arg(int key, char *arg, struct argp_state *state)
 {
@@ -121,6 +125,12 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
     case 'd':
         dport = strtoul(arg, &end, 10);
         break;
+    case 'S':
+        src_ip = arg;
+        break;
+    case 'D':
+        dst_ip = arg;
+        break;
     case 'u':
         udp_info = 1;
         break;
@@ -136,13 +146,13 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
     case 'I':
         icmp_info = 1;
         break;
-    case 'S':
+    case 'P':
         tcp_info = 1;
         break;
     case 'L':
         time_load = 1;
         break;
-    case 'D':
+    case 'N':
         dns_info = 1;
         break;
     case 'A':
@@ -180,6 +190,7 @@ static error_t parse_arg(int key, char *arg, struct argp_state *state)
     }
     return 0;
 }
+
 static const struct argp argp = {
     .options = opts,
     .parser = parse_arg,
@@ -508,6 +519,22 @@ int process_delay(float layer_delay, int layer_index)
     }
     return 0;
 }
+// 封装的过滤逻辑函数
+static int should_filter(const char *src, const char *dst, const char *filter_src_ip, const char *filter_dst_ip)
+{
+    if (filter_src_ip && strcmp(src, filter_src_ip) == 0)
+    {
+        return 1; // 过滤掉
+    }
+
+    if (filter_dst_ip && strcmp(dst, filter_dst_ip) == 0)
+    {
+        return 1; // 过滤掉
+    }
+
+    return 0; // 不过滤
+}
+
 static void set_rodata_flags(struct net_watcher_bpf *skel)
 {
     skel->rodata->filter_dport = dport;
@@ -871,6 +898,7 @@ static void bytes_to_str(char *str, unsigned long long num)
         sprintf(str, "%llu", num);
     }
 }
+
 static int print_conns(struct net_watcher_bpf *skel)
 {
 
@@ -896,9 +924,7 @@ static int print_conns(struct net_watcher_bpf *skel)
 
         char s_ip_port_str[INET6_ADDRSTRLEN + 6];
         char d_ip_port_str[INET6_ADDRSTRLEN + 6];
-        if ((d.saddr & 0x0000FFFF) == 0x0000007F ||
-            (d.daddr & 0x0000FFFF) == 0x0000007F)
-            return 0;
+
         if (d.family == AF_INET)
         {
             inet_ntop(AF_INET, &d.saddr, s_str, sizeof(s_str));
@@ -958,9 +984,12 @@ static int print_packet(void *ctx, void *packet_info, size_t size)
     char s_str[INET_ADDRSTRLEN];
     unsigned int saddr = pack_info->saddr;
     unsigned int daddr = pack_info->daddr;
-    if ((daddr & 0x0000FFFF) == 0x0000007F ||
-        (saddr & 0x0000FFFF) == 0x0000007F)
+    inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
+    inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
+    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    {
         return 0;
+    }
     if (dport)
         if (pack_info->dport != dport)
             return 0;
@@ -989,9 +1018,9 @@ static int print_packet(void *ctx, void *packet_info, size_t size)
         printf("%-22p %-20s %-8d %-20s %-8d %-14llu %-14llu %-14llu %-14u %-14u %-14d "
                "%-16s",
                pack_info->sock,
-               inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str)),
+               s_str,
                pack_info->sport,
-               inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str)),
+               d_str,
                pack_info->dport, pack_info->mac_time, pack_info->ip_time,
                pack_info->tran_time, pack_info->seq, pack_info->ack, pack_info->rx, http_data);
     }
@@ -1018,9 +1047,9 @@ static int print_packet(void *ctx, void *packet_info, size_t size)
             }
             printf("%-22p %-20s %-8d %-20s %-8d %-14u %-14u %-14s ",
                    pack_info->sock,
-                   inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str)),
+                   s_str,
                    pack_info->sport,
-                   inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str)),
+                   d_str,
                    pack_info->dport, pack_info->seq, pack_info->ack, reason);
         }
     }
@@ -1028,9 +1057,9 @@ static int print_packet(void *ctx, void *packet_info, size_t size)
     {
         printf("%-22p %-20s %-8d %-20s %-8d %-14u %-14u %-14u %-14u %-14u %-14d %-16s\n",
                pack_info->sock,
-               inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str)),
+               s_str,
                pack_info->sport,
-               inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str)),
+               d_str,
                pack_info->dport, 0, 0, 0, pack_info->seq, pack_info->ack, pack_info->rx, http_data);
     }
     if (time_load)
@@ -1050,20 +1079,24 @@ static int print_udp(void *ctx, void *packet_info, size_t size)
 {
     if (!udp_info)
         return 0;
+
     char d_str[INET_ADDRSTRLEN];
     char s_str[INET_ADDRSTRLEN];
     const struct udp_message *pack_info = packet_info;
     unsigned int saddr = pack_info->saddr;
     unsigned int daddr = pack_info->daddr;
 
-    if (pack_info->tran_time > MAXTIME || (daddr & 0x0000FFFF) == 0x0000007F ||
-        (saddr & 0x0000FFFF) == 0x0000007F)
+    inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
+    inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
+
+    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    {
         return 0;
-    printf("%-20s %-20s %-20u %-20u %-20llu %-20d %-20d",
-           inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str)),
-           inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str)), pack_info->sport,
-           pack_info->dport, pack_info->tran_time, pack_info->rx,
-           pack_info->len);
+    }
+
+    printf("%-20s %-20s %-20u %-20u %-20llu %-20d %-20d\n",
+           s_str, d_str, pack_info->sport, pack_info->dport,
+           pack_info->tran_time, pack_info->rx, pack_info->len);
 
     if (time_load)
     {
@@ -1074,6 +1107,7 @@ static int print_udp(void *ctx, void *packet_info, size_t size)
     printf("\n");
     return 0;
 }
+
 static int print_netfilter(void *ctx, void *packet_info, size_t size)
 {
     if (!net_filter)
@@ -1081,20 +1115,27 @@ static int print_netfilter(void *ctx, void *packet_info, size_t size)
     char d_str[INET_ADDRSTRLEN];
     char s_str[INET_ADDRSTRLEN];
     const struct netfilter *pack_info = packet_info;
+
     if (pack_info->local_input_time > MAXTIME ||
         pack_info->forward_time > MAXTIME ||
         pack_info->local_out_time > MAXTIME ||
         pack_info->post_routing_time > MAXTIME ||
         pack_info->pre_routing_time > MAXTIME)
         return 0;
+
     unsigned int saddr = pack_info->saddr;
     unsigned int daddr = pack_info->daddr;
-    // if ((daddr & 0x0000FFFF) == 0x0000007F ||
-    //     (saddr & 0x0000FFFF) == 0x0000007F)
-    //     return 0;
+
+    inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
+    inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
+
+    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    {
+        return 0;
+    }
+
     printf("%-20s %-20s %-12d %-12d %-8lld %-8lld% -8lld %-8lld %-8lld %-8d",
-           inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str)),
-           inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str)), pack_info->sport,
+           s_str, d_str, pack_info->sport,
            pack_info->dport, pack_info->pre_routing_time,
            pack_info->local_input_time, pack_info->forward_time,
            pack_info->post_routing_time, pack_info->local_out_time,
@@ -1132,9 +1173,15 @@ static int print_tcpstate(void *ctx, void *packet_info, size_t size)
     const struct tcp_state *pack_info = packet_info;
     unsigned int saddr = pack_info->saddr;
     unsigned int daddr = pack_info->daddr;
+    inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
+    inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
+    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    {
+        return 0;
+    }
+
     printf("%-20s %-20s %-20d %-20d %-20s %-20s  %-20lld\n",
-           inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str)),
-           inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str)), pack_info->sport,
+           s_str, d_str, pack_info->sport,
            pack_info->dport, tcp_states[pack_info->oldstate],
            tcp_states[pack_info->newstate], pack_info->time);
 
@@ -1243,14 +1290,16 @@ static int print_kfree(void *ctx, void *packet_info, size_t size)
         return 0;
     char d_str[INET_ADDRSTRLEN];
     char s_str[INET_ADDRSTRLEN];
+    char prot[6];
     const struct reasonissue *pack_info = packet_info;
     unsigned int saddr = pack_info->saddr;
     unsigned int daddr = pack_info->daddr;
-    if (saddr == 0 && daddr == 0)
+    inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
+    inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
+    if (should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
-    char prot[6];
     if (pack_info->protocol == 2048)
     {
         strcpy(prot, "ipv4");
@@ -1268,8 +1317,7 @@ static int print_kfree(void *ctx, void *packet_info, size_t size)
     struct tm *localTime = localtime(&now);
     printf("%02d:%02d:%02d      %-17s %-17s %-10u %-10u %-10s",
            localTime->tm_hour, localTime->tm_min, localTime->tm_sec,
-           inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str)),
-           inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str)), pack_info->sport,
+           s_str, d_str, pack_info->sport,
            pack_info->dport, prot);
     if (!addr_to_func)
         printf("%-34lx", pack_info->location);
@@ -1296,9 +1344,14 @@ static int print_icmptime(void *ctx, void *packet_info, size_t size)
     }
     unsigned int saddr = pack_info->saddr;
     unsigned int daddr = pack_info->daddr;
+    inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
+    inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
+    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    {
+        return 0;
+    }
     printf("%-20s %-20s %-20lld %-20d",
-           inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str)),
-           inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str)),
+          s_str,d_str,
            pack_info->icmp_tran_time, pack_info->flag);
     if (time_load)
     {
@@ -1402,12 +1455,13 @@ static int print_dns(void *ctx, void *packet_info, size_t size)
 
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
-
     print_domain_name((const unsigned char *)pack_info->data, domain_name);
-    if (pack_info->daddr == 0)
+ 
+    if (should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
+
     printf("%-20s %-20s %-#12x %-#12x %-5x %-5x %-5x %-5x %-47s %-10d %-10d "
            "%-10d \n",
            s_str, d_str, pack_info->id, pack_info->flags, pack_info->qdcount,
@@ -1563,14 +1617,13 @@ static int print_rate(void *ctx, void *data, size_t size)
     const struct tcp_rate *pack_info = (const struct tcp_rate *)data;
     unsigned int saddr = pack_info->skbap.saddr;
     unsigned int daddr = pack_info->skbap.daddr;
-    if ((saddr & 0x0000FFFF) == 0x0000007F ||
-        (daddr & 0x0000FFFF) == 0x0000007F)
-        return 0;
-    if ((saddr & 0xFF000000) == 0x01000000 ||
-        (daddr & 0xFF000000) == 0x01000000)
-        return 0;
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
+
+    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    {
+        return 0;
+    }
 
     printf("%-20s %-20s %-20d %-20d %-20lld %-20lld\n", s_str, d_str,
            pack_info->skbap.sport, pack_info->skbap.dport, pack_info->tcp_rto,
@@ -1589,12 +1642,9 @@ static int print_rtt(void *ctx, void *data, size_t size)
     char s_str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &rtt_tuple->saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &rtt_tuple->daddr, d_str, sizeof(d_str));
-    if ((rtt_tuple->saddr & 0x0000FFFF) == 0x0000007F ||
-        (rtt_tuple->daddr & 0x0000FFFF) == 0x0000007F ||
-        rtt_tuple->saddr == htonl(0xC0A83C01) ||
-        rtt_tuple->daddr == htonl(0xC0A83C01))
+    if (should_filter(s_str, d_str, src_ip, dst_ip))
     {
-        return 0; // 如果匹配任一过滤条件，放弃处理这些数据包
+        return 0;
     }
     // 打印源地址和目的地址
     printf("Source Address: %s\n", s_str);
