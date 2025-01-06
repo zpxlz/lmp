@@ -1735,10 +1735,9 @@ void print_top_5_keys()
         // printf("Key: %s, Count: %u\n", pairs[index].key, pairs[index].value);
         index++;
     }
-    // 获取所有键值对
 
     // 排序前 5 个元素
-    // 简单选择排序（可替换为其他高效排序算法）
+    // 简单选择排序
     for (int i = 0; i < index - 1; i++)
     {
         for (int j = i + 1; j < index; j++)
