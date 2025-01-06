@@ -558,6 +558,7 @@ static void set_rodata_flags(struct net_watcher_bpf *skel)
     skel->rodata->rtt_info = rtt_info;
     skel->rodata->rst_info = rst_info;
     skel->rodata->protocol_count = protocol_count;
+    skel->rodata->overrun_time = overrun_time;
 }
 static void set_disable_load(struct net_watcher_bpf *skel)
 {
