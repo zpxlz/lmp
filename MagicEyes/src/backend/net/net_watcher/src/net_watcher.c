@@ -519,20 +519,42 @@ int process_delay(float layer_delay, int layer_index)
     }
     return 0;
 }
-//过滤ip
+
 static int should_filter(const char *src, const char *dst, const char *filter_src_ip, const char *filter_dst_ip)
 {
-    if (filter_src_ip && strcmp(src, filter_src_ip) == 0)
+    // 均未指定
+    if (!filter_src_ip && !filter_dst_ip)
     {
-        return 1; 
+        return 1;
     }
 
-    if (filter_dst_ip && strcmp(dst, filter_dst_ip) == 0)
+    // 指定源IP和目的IP
+    if (filter_src_ip && filter_dst_ip)
     {
-        return 1; 
+        if (strcmp(src, filter_src_ip) == 0 && strcmp(dst, filter_dst_ip) == 0)
+        {
+            return 1;
+        }
+    }
+    // 只指定源IP
+    else if (filter_src_ip)
+    {
+
+        if (strcmp(src, filter_src_ip) == 0)
+        {
+            return 1;
+        }
+    }
+    // 只指定目的IP
+    else if (filter_dst_ip)
+    {
+        if (strcmp(dst, filter_dst_ip) == 0)
+        {
+            return 1;
+        }
     }
 
-    return 0; 
+    return 0;
 }
 
 static void set_rodata_flags(struct net_watcher_bpf *skel)
@@ -746,8 +768,8 @@ static void print_header(enum MonitorMode mode)
                "UDP "
                "INFORMATION===================================================="
                "====\n");
-        printf("%-20s %-20s %-20s %-20s %-20s %-20s %-20s\n", "Saddr", "Daddr",
-               "Sprot", "Dprot", "udp_time/μs", "RX/direction", "len/byte");
+        printf("%-20s %-20s %-20s %-20s %-20s %-20s %-20s\n", "Saddr", "Sport",
+               "Daddr", "Dprot", "udp_time/μs", "RX/direction", "len/byte");
         break;
     case MODE_NET_FILTER:
         printf("==============================================================="
@@ -755,7 +777,7 @@ static void print_header(enum MonitorMode mode)
                "INFORMATION===================================================="
                "=======\n");
         printf("%-20s %-20s %-12s %-12s %-8s %-8s %-7s %-8s %-8s %-8s\n",
-               "Saddr", "Daddr", "Sprot", "Dprot", "PreRT/μs", "L_IN/μs",
+               "Saddr", "Sport", "Daddr", "Dprot", "PreRT/μs", "L_IN/μs",
                "FW/μs", "PostRT/μs", "L_OUT/μs", "RX/direction");
         break;
     case MODE_DROP_REASON:
@@ -764,7 +786,7 @@ static void print_header(enum MonitorMode mode)
                "INFORMATION===================================================="
                "====\n");
         printf("%-13s %-17s %-17s %-10s %-10s %-9s %-33s %-30s\n", "Time",
-               "Saddr", "Daddr", "Sprot", "Dprot", "prot", "addr", "reason");
+               "Saddr", "Sport", "Daddr", "Dprot", "prot", "addr", "reason");
         break;
     case MODE_ICMP:
         printf("=================================================ICMP "
@@ -777,8 +799,8 @@ static void print_header(enum MonitorMode mode)
                "TCP STATE "
                "INFORMATION===================================================="
                "====\n");
-        printf("%-20s %-20s %-20s %-20s %-20s %-20s %-20s \n", "Saddr", "Daddr",
-               "Sport", "Dport", "oldstate", "newstate", "time/μs");
+        printf("%-20s %-20s %-20s %-20s %-20s %-20s %-20s \n", "Saddr", "Sport",
+               "Daddr", "Dport", "oldstate", "newstate", "time/μs");
         break;
     case MODE_DNS:
         printf("==============================================================="
@@ -825,28 +847,28 @@ static void print_header(enum MonitorMode mode)
                "INFORMATION===================================================="
                "============================\n");
         printf("%-10s %-20s %-10s %-10s %-10s %-10s %-20s \n", "Pid", "Comm",
-               "Saddr", "Daddr", "Sport", "Dport", "Time");
+               "Saddr", "Sport", "Daddr", "Dport", "Time");
         break;
     case MODE_EXTRA_CONN:
         printf("==============================================================="
                "====================EXTRA CONN "
                "INFORMATION===================================================="
                "============================\n");
-        printf("%-15s %-15s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %-13s %-10s %-10s %-10s %-10s\n", "Saddr", "Daddr", "Sport", "Dport", "backlog", "maxbacklog", "rwnd", "cwnd", "ssthresh", "sndbuf", "wmem_queued", "rx_bytes", "tx_bytes", "srtt", "duration");
+        printf("%-15s %-15s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %-13s %-10s %-10s %-10s %-10s\n", "Saddr", "Sport", "Daddr", "Dport", "backlog", "maxbacklog", "rwnd", "cwnd", "ssthresh", "sndbuf", "wmem_queued", "rx_bytes", "tx_bytes", "srtt", "duration");
         break;
     case MODE_RETRANS:
         printf("==============================================================="
                "====================RETRANS "
                "INFORMATION===================================================="
                "============================\n");
-        printf("%-15s %-15s %-10s %-10s %-10s %-10s %-10s\n", "Saddr", "Daddr", "Sport", "Dport", "fastRe", "total_retrans", "timeout");
+        printf("%-15s %-15s %-10s %-10s %-10s %-10s %-10s\n", "Saddr", "Sport", "Daddr", "Dport", "fastRe", "total_retrans", "timeout");
         break;
     case MODE_CONN:
         printf("==============================================================="
                "====================CONN "
                "INFORMATION===================================================="
                "============================\n");
-        printf("%-15s %-20s %-15s %-15s %-10s %-10s %-10s\n", "Pid", "Sock", "Saddr", "Daddr", "Sport", "Dport", "Is_Server");
+        printf("%-15s %-20s %-15s %-15s %-10s %-10s %-10s\n", "Pid", "Sock", "Saddr", "Sport", "Daddr", "Dport", "Is_Server");
         break;
     case MODE_DEFAULT:
         printf("==============================================================="
@@ -868,7 +890,7 @@ static void print_header(enum MonitorMode mode)
                "=OVERTIME INFORMATION==================================================="
                "======================\n");
         printf("%-20s %-20s %-20s %-20s %-20s %-20s\n",
-               "Saddr", "Daddr", "Sport", "Dport", "RTO", "Delack_max");
+               "Saddr", "Sport", "Daddr", "Dport", "RTO", "Delack_max");
         break;
     case MODE_PROTOCOL_COUNT:
         printf("==============================================================="
@@ -952,19 +974,19 @@ static int print_conns(struct net_watcher_bpf *skel)
 
         if (extra_conn_info)
         {
-            printf("%-15s %-15s %-10d %-10d %-10u %-10u %-10u %-10u %-10u %-10u %-13u %-10s %-10s %-10u %-10llu\n",
-                   s_ip_only, d_ip_only, d.sport, d.dport, d.tcp_backlog,
+            printf("%-15s %-10d %-15s %-10d %-10u %-10u %-10u %-10u %-10u %-10u %-13u %-10s %-10s %-10u %-10llu\n",
+                   s_ip_only, d.sport,d_ip_only, d.dport, d.tcp_backlog,
                    d.max_tcp_backlog, d.rcv_wnd, d.snd_cwnd, d.snd_ssthresh,
                    d.sndbuf, d.sk_wmem_queued, received_bytes, acked_bytes, d.srtt,
                    d.duration);
         }
         if (retrans_info)
         {
-            printf("%-15s %-15s %-10d %-10d %-10u %-14u %-10u\n", s_ip_only, d_ip_only, d.sport, d.dport, d.fastRe, d.total_retrans, d.timeout);
+            printf("%-15s %-10d %-15s %-10d %-10u %-14u %-10u\n", s_ip_only, d.sport, d_ip_only, d.dport, d.fastRe, d.total_retrans, d.timeout);
         }
         if (all_conn)
         {
-            printf("%-15d %-20p %-15s %-15s %-10d %-10d %-10u\n", d.pid, d.sock, s_ip_only, d_ip_only, d.sport, d.dport, d.is_server);
+            printf("%-15d %-20p %-15s %-10d %-15s %-10d %-10u\n", d.pid, d.sock, s_ip_only, d.sport, d_ip_only, d.dport, d.is_server);
         }
     }
     return 0;
@@ -1090,13 +1112,13 @@ static int print_udp(void *ctx, void *packet_info, size_t size)
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
 
-    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    if (!should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
 
-    printf("%-20s %-20s %-20u %-20u %-20llu %-20d %-20d\n",
-           s_str, d_str, pack_info->sport, pack_info->dport,
+    printf("%-20s %-20u %-20s %-20u %-20llu %-20d %-20d\n",
+           s_str, pack_info->sport,d_str, pack_info->dport,
            pack_info->tran_time, pack_info->rx, pack_info->len);
 
     if (time_load)
@@ -1130,13 +1152,13 @@ static int print_netfilter(void *ctx, void *packet_info, size_t size)
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
 
-    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    if (!should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
 
-    printf("%-20s %-20s %-12d %-12d %-8lld %-8lld% -8lld %-8lld %-8lld %-8d",
-           s_str, d_str, pack_info->sport,
+    printf("%-20s %-12d %-20s %-12d %-8lld %-8lld% -8lld %-8lld %-8lld %-8d",
+           s_str, pack_info->sport,d_str,
            pack_info->dport, pack_info->pre_routing_time,
            pack_info->local_input_time, pack_info->forward_time,
            pack_info->post_routing_time, pack_info->local_out_time,
@@ -1176,13 +1198,13 @@ static int print_tcpstate(void *ctx, void *packet_info, size_t size)
     unsigned int daddr = pack_info->daddr;
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
-    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    if (!should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
 
-    printf("%-20s %-20s %-20d %-20d %-20s %-20s  %-20lld\n",
-           s_str, d_str, pack_info->sport,
+    printf("%-20s %-20d %-20s %-20d %-20s %-20s  %-20lld\n",
+           s_str, pack_info->sport,d_str,
            pack_info->dport, tcp_states[pack_info->oldstate],
            tcp_states[pack_info->newstate], pack_info->time);
 
@@ -1297,7 +1319,7 @@ static int print_kfree(void *ctx, void *packet_info, size_t size)
     unsigned int daddr = pack_info->daddr;
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
-    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    if (!should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
@@ -1316,9 +1338,9 @@ static int print_kfree(void *ctx, void *packet_info, size_t size)
     }
     time_t now = time(NULL);
     struct tm *localTime = localtime(&now);
-    printf("%02d:%02d:%02d      %-17s %-17s %-10u %-10u %-10s",
+    printf("%02d:%02d:%02d      %-17s %-10u %-17s %-10u %-10s",
            localTime->tm_hour, localTime->tm_min, localTime->tm_sec,
-           s_str, d_str, pack_info->sport,
+           s_str, pack_info->sport,d_str,
            pack_info->dport, prot);
     if (!addr_to_func)
         printf("%-34lx", pack_info->location);
@@ -1347,12 +1369,12 @@ static int print_icmptime(void *ctx, void *packet_info, size_t size)
     unsigned int daddr = pack_info->daddr;
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
-    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    if (!should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
     printf("%-20s %-20s %-20lld %-20d",
-          s_str,d_str,
+           s_str, d_str,
            pack_info->icmp_tran_time, pack_info->flag);
     if (time_load)
     {
@@ -1400,9 +1422,9 @@ static void print_stored_events()
         {
             inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
             inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
-            printf("%-10d %-10s %-10s %-10s %-10u %-10u %-20llu",
-                   event->pid, event->comm, s_str, d_str,
-                   event->sport, event->dport,
+            printf("%-10d %-10s %-10s %-10u %-10s %-10u %-20llu",
+                   event->pid, event->comm, s_str,
+                   event->sport, d_str,event->dport,
                    event->timestamp);
         }
         else if (event->family == AF_INET6)
@@ -1410,9 +1432,9 @@ static void print_stored_events()
 
             inet_ntop(AF_INET6, &event->saddr_v6, saddr_v6, sizeof(saddr_v6));
             inet_ntop(AF_INET6, &event->daddr_v6, daddr_v6, sizeof(daddr_v6));
-            printf("%-10d %10s %-10s %-10s %-10u %-10u %-20llu\n",
+            printf("%-10d %10s %-10s %-10u %-10s %-10u %-20llu\n",
                    event->pid, event->comm, saddr_v6,
-                   daddr_v6, event->sport, event->dport,
+                    event->sport,daddr_v6, event->dport,
                    event->timestamp);
         }
         printf("\n");
@@ -1457,8 +1479,8 @@ static int print_dns(void *ctx, void *packet_info, size_t size)
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
     print_domain_name((const unsigned char *)pack_info->data, domain_name);
- 
-    if (should_filter(s_str, d_str, src_ip, dst_ip))
+
+    if (!should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
@@ -1621,13 +1643,13 @@ static int print_rate(void *ctx, void *data, size_t size)
     inet_ntop(AF_INET, &saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &daddr, d_str, sizeof(d_str));
 
-    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    if (!should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
 
-    printf("%-20s %-20s %-20d %-20d %-20lld %-20lld\n", s_str, d_str,
-           pack_info->skbap.sport, pack_info->skbap.dport, pack_info->tcp_rto,
+    printf("%-20s %-20d %-20s %-20d %-20lld %-20lld\n", s_str,
+           pack_info->skbap.sport, d_str,pack_info->skbap.dport, pack_info->tcp_rto,
            pack_info->tcp_delack_max);
 
     return 0;
@@ -1643,7 +1665,7 @@ static int print_rtt(void *ctx, void *data, size_t size)
     char s_str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &rtt_tuple->saddr, s_str, sizeof(s_str));
     inet_ntop(AF_INET, &rtt_tuple->daddr, d_str, sizeof(d_str));
-    if (should_filter(s_str, d_str, src_ip, dst_ip))
+    if (!should_filter(s_str, d_str, src_ip, dst_ip))
     {
         return 0;
     }
