@@ -30,9 +30,93 @@ in_ipv6:
     kprobe/tcp_v6_do_rcv
     kprobe/skb_copy_datagram_iter
 */
-static __always_inline
-int __eth_type_trans(struct sk_buff *skb)
-{
+static __always_inline struct packet_count *count_packet(u32 proto,
+                                                         bool is_tx) {
+    struct packet_count *count;
+    struct packet_count initial_count = {0};
+
+    count = bpf_map_lookup_elem(&proto_stats, &proto);
+    if (!count) {
+        initial_count.tx_count = 0;
+        initial_count.rx_count = 0;
+        if (bpf_map_update_elem(&proto_stats, &proto, &initial_count,
+                                BPF_ANY)) {
+            return NULL;
+        }
+        count = bpf_map_lookup_elem(&proto_stats, &proto);
+        if (!count) {
+            return NULL;
+        }
+    }
+
+    if (is_tx)
+        __sync_fetch_and_add(&count->tx_count, 1);
+    else
+        __sync_fetch_and_add(&count->rx_count, 1);
+    return count;
+}
+
+static __always_inline int sum_protocol(struct sk_buff *skb, bool is_tx) {
+    const struct ethhdr *eth = (struct ethhdr *)BPF_CORE_READ(skb, data);
+    u16 proto = BPF_CORE_READ(eth, h_proto);
+
+    struct packet_info *pkt = bpf_ringbuf_reserve(&port_rb, sizeof(*pkt), 0);
+    if (!pkt) {
+        return 0;
+    }
+
+    if (BPF_CORE_READ(eth, h_proto) != __bpf_htons(ETH_P_IP)) {
+        bpf_ringbuf_discard(pkt, 0);
+        return 0;
+    }
+
+    struct iphdr *ip = (struct iphdr *)(BPF_CORE_READ(skb, data) + 14);
+    if (!ip) {
+        bpf_ringbuf_discard(pkt, 0);
+        return 0;
+    }
+
+    pkt->saddr = BPF_CORE_READ(ip, saddr);
+    pkt->daddr = BPF_CORE_READ(ip, daddr);
+    pkt->proto = BPF_CORE_READ(ip, protocol);
+
+    if (pkt->proto == IPPROTO_TCP) {
+        struct tcphdr *tcp =
+            (struct tcphdr *)(BPF_CORE_READ(skb, data) + sizeof(struct ethhdr) +
+                              sizeof(struct iphdr));
+        pkt->sport = BPF_CORE_READ(tcp, source);
+        pkt->dport = BPF_CORE_READ(tcp, dest);
+        pkt->proto = PROTO_TCP;
+    } else if (pkt->proto == IPPROTO_UDP) {
+        struct udphdr *udp =
+            (struct udphdr *)(BPF_CORE_READ(skb, data) + sizeof(struct ethhdr) +
+                              sizeof(struct iphdr));
+        pkt->sport = BPF_CORE_READ(udp, source);
+        pkt->dport = BPF_CORE_READ(udp, dest);
+        pkt->proto = PROTO_UDP;
+    } else if (pkt->proto == IPPROTO_ICMP) {
+        pkt->proto = PROTO_ICMP;
+    } else {
+        pkt->proto = PROTO_UNKNOWN;
+    }
+    struct packet_count *count = count_packet(pkt->proto, is_tx);
+    if (count) {
+        pkt->count.tx_count = count->tx_count;
+        pkt->count.rx_count = count->rx_count;
+    } else {
+        pkt->count.tx_count = 0;
+        pkt->count.rx_count = 0;
+    }
+
+    // bpf_printk("pkt: saddr=%u, daddr=%u, proto=%u\n", pkt->saddr, pkt->daddr,
+    // pkt->proto); bpf_printk("sport=%d, dport=%d\n", pkt->sport, pkt->dport);
+    // bpf_printk("count_tx=%llu, count_rx=%llu\n", pkt->count.tx_count,
+    // pkt->count.rx_count);
+    bpf_ringbuf_submit(pkt, 0);
+
+    return 0;
+}
+static __always_inline int __eth_type_trans(struct sk_buff *skb) {
     const struct ethhdr *eth =
         (struct ethhdr *)BPF_CORE_READ(skb, data); // 读取里面的报文数据
     u16 protocol = BPF_CORE_READ(eth, h_proto);    // 读取包ID
@@ -81,9 +165,7 @@ int __eth_type_trans(struct sk_buff *skb)
     return 0;
 }
 
-static __always_inline
-int __ip_rcv_core(struct sk_buff *skb)
-{
+static __always_inline int __ip_rcv_core(struct sk_buff *skb) {
     if (!layer_time) {
         return 0;
     }
@@ -105,9 +187,7 @@ int __ip_rcv_core(struct sk_buff *skb)
     return 0;
 }
 
-static __always_inline
-int __ip6_rcv_core( struct sk_buff *skb)
-{
+static __always_inline int __ip6_rcv_core(struct sk_buff *skb) {
     if (!layer_time) {
         return 0;
     }
@@ -128,9 +208,7 @@ int __ip6_rcv_core( struct sk_buff *skb)
     // bpf_printk("rx enter ipv6 layer.\n");
     return 0;
 }
-static __always_inline
-int __tcp_v4_rcv(struct sk_buff *skb)
-{
+static __always_inline int __tcp_v4_rcv(struct sk_buff *skb) {
     if (!layer_time) {
         return 0;
     }
@@ -149,9 +227,7 @@ int __tcp_v4_rcv(struct sk_buff *skb)
     // bpf_printk("rx enter tcp4 layer.\n");
     return 0;
 }
-static __always_inline
-int __tcp_v6_rcv(struct sk_buff *skb)
-{
+static __always_inline int __tcp_v6_rcv(struct sk_buff *skb) {
     if (!layer_time) {
         return 0;
     }
@@ -171,9 +247,8 @@ int __tcp_v6_rcv(struct sk_buff *skb)
     // bpf_printk("rx enter tcp6 layer.\n");
     return 0;
 }
-static __always_inline
-int __tcp_v4_do_rcv(struct sock *sk,struct sk_buff *skb)
-{
+static __always_inline int __tcp_v4_do_rcv(struct sock *sk,
+                                           struct sk_buff *skb) {
     if (sk == NULL || skb == NULL)
         return 0;
     struct conn_t *conn = bpf_map_lookup_elem(&conns_info, &sk);
@@ -201,9 +276,8 @@ int __tcp_v4_do_rcv(struct sock *sk,struct sk_buff *skb)
 
     return 0;
 }
-static __always_inline
-int __tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
-{
+static __always_inline int __tcp_v6_do_rcv(struct sock *sk,
+                                           struct sk_buff *skb) {
     if (sk == NULL || skb == NULL)
         return 0;
     // bpf_printk("rx enter tcp6_do_rcv. \n");
@@ -233,9 +307,7 @@ int __tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 
     return 0;
 }
-static __always_inline
-int __skb_copy_datagram_iter(struct sk_buff *skb)
-{
+static __always_inline int __skb_copy_datagram_iter(struct sk_buff *skb) {
     if (skb == NULL)
         return 0;
     __be16 protocol = BPF_CORE_READ(skb, protocol); // 读取skb协议字段
@@ -276,6 +348,10 @@ int __skb_copy_datagram_iter(struct sk_buff *skb)
     // bpf_printk("rx enter app layer.\n");
 
     PACKET_INIT_WITH_COMMON_INFO
+    packet->saddr = pkt_tuple.saddr;
+    packet->daddr = pkt_tuple.daddr;
+    packet->sport = pkt_tuple.sport;
+    packet->dport = pkt_tuple.dport;
 
     if (layer_time) {
         packet->mac_time = tinfo->ip_time - tinfo->mac_time;
@@ -292,8 +368,7 @@ int __skb_copy_datagram_iter(struct sk_buff *skb)
         int doff =
             BPF_CORE_READ_BITFIELD_PROBED(tcp, doff); // 得用bitfield_probed
         // 读取tcp头部中的数据偏移字段
-        u8 *user_data =
-            (u8 *)((u8 *)tcp + (doff * 4));
+        u8 *user_data = (u8 *)((u8 *)tcp + (doff * 4));
         // 计算tcp的负载开始位置就是tcp头部之后的数据，将tcp指针指向tcp头部位置将其转换成unsigned
         // char类型
         // doff *
@@ -317,9 +392,8 @@ out_ipv6:
     kprobe/dev_queue_xmit
     kprobe/dev_hard_start_xmit
 */
-static __always_inline
-int __tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
-{
+static __always_inline int __tcp_sendmsg(struct sock *sk, struct msghdr *msg,
+                                         size_t size) {
     struct conn_t *conn = bpf_map_lookup_elem(&conns_info, &sk);
     if (conn == NULL) {
         return 0;
@@ -389,7 +463,7 @@ int __tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 
     // TX HTTP info
     if (http_info) {
-        u8 *user_data = BPF_CORE_READ(msg, msg_iter.iov, iov_base);
+        u8 *user_data = GET_USER_DATA(msg);
         tinfo = (struct ktime_info *)bpf_map_lookup_or_try_init(
             &timestamps, &pkt_tuple, &zero);
         if (tinfo == NULL) {
@@ -399,9 +473,8 @@ int __tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
     }
     return 0;
 }
-static __always_inline
-int __ip_queue_xmit(struct sock *sk, struct sk_buff *skb)
-{
+static __always_inline int __ip_queue_xmit(struct sock *sk,
+                                           struct sk_buff *skb) {
     if (!layer_time) {
         return 0;
     }
@@ -427,11 +500,11 @@ int __ip_queue_xmit(struct sock *sk, struct sk_buff *skb)
         }
         tinfo->ip_time = bpf_ktime_get_ns() / 1000;
     }
+
     return 0;
 }
-static __always_inline
-int __inet6_csk_xmit(struct sock *sk, struct sk_buff *skb)
-{
+static __always_inline int __inet6_csk_xmit(struct sock *sk,
+                                            struct sk_buff *skb) {
     if (!layer_time) {
         return 0;
     }
@@ -468,9 +541,7 @@ int __inet6_csk_xmit(struct sock *sk, struct sk_buff *skb)
     }
     return 0;
 }
-static __always_inline
-int dev_queue_xmit(struct sk_buff *skb)
-{
+static __always_inline int dev_queue_xmit(struct sk_buff *skb) {
     if (!layer_time) {
         return 0;
     }
@@ -486,9 +557,6 @@ int dev_queue_xmit(struct sk_buff *skb)
         /** ipv4 */
         struct iphdr *ip = skb_to_iphdr(skb);
         get_pkt_tuple(&pkt_tuple, ip, tcp);
-
-        // FILTER_DPORT
-        // FILTER_SPORT
 
         if ((tinfo = bpf_map_lookup_elem(&timestamps, &pkt_tuple)) == NULL) {
             return 0;
@@ -506,9 +574,7 @@ int dev_queue_xmit(struct sk_buff *skb)
     }
     return 0;
 }
-static __always_inline
-int __dev_hard_start_xmit(struct sk_buff *skb)
-{
+static __always_inline int __dev_hard_start_xmit(struct sk_buff *skb) {
     const struct ethhdr *eth = (struct ethhdr *)BPF_CORE_READ(skb, data);
     u16 protocol = BPF_CORE_READ(eth, h_proto);
     struct tcphdr *tcp = skb_to_tcphdr(skb);
@@ -546,22 +612,27 @@ int __dev_hard_start_xmit(struct sk_buff *skb)
         return 0;
     }
     PACKET_INIT_WITH_COMMON_INFO
+    packet->saddr = pkt_tuple.saddr;
+    packet->daddr = pkt_tuple.daddr;
+    packet->sport = pkt_tuple.sport;
+    packet->dport = pkt_tuple.dport;
     // 记录各层的时间差值
     if (layer_time) {
         packet->tran_time = tinfo->ip_time - tinfo->tran_time;
         packet->ip_time = tinfo->mac_time - tinfo->ip_time;
-        packet->mac_time =tinfo->qdisc_time -tinfo->mac_time; // 队列纪律层，处于网络协议栈最底层，负责实际数据传输与接收
+        packet->mac_time =
+            tinfo->qdisc_time -
+            tinfo
+                ->mac_time; // 队列纪律层，处于网络协议栈最底层，负责实际数据传输与接收
     }
-
     packet->rx = 0; // 发送一个数据包
 
     // TX HTTP Info
     if (http_info) {
         bpf_probe_read_str(packet->data, sizeof(packet->data), tinfo->data);
-        bpf_printk("%s", packet->data);
+        // bpf_printk("%s", packet->data);
     }
     bpf_ringbuf_submit(packet, 0);
 
     return 0;
 }
-
