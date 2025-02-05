@@ -3,7 +3,7 @@ module lmp/eTrafficManager
 go 1.20
 
 require (
-	github.com/cilium/cilium v1.14.16
+	github.com/cilium/cilium v1.14.19
 	github.com/cilium/ebpf v0.11.0
 	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/common v0.42.0
@@ -76,7 +76,7 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
-	google.golang.org/protobuf v1.34.2 // indirect
+	google.golang.org/protobuf v1.36.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
